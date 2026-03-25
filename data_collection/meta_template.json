@@ -1,0 +1,184 @@
+{
+  "version": "v0.1",
+  "created_at": 0.0,
+  "finished_at": 0.0,
+  "robot_meta": {
+      "robot_type": "dos_w1",
+      "serial": "001",
+      "description": ""
+  },
+  "task_meta": {
+      "task_name": "stack_bowls",
+      "prompt": "stack all bowls in order",
+      "episode_id": 0
+  },
+  "file_meta": {
+      "actions": "actions/{action_key}.{ext}",
+      "sensors": "sensors/{sensor_key}_{camera_type}.{ext}"
+  },
+  "actions": {
+      "left_arm": {
+          "fps": 50,
+          "file_meta": {
+              "file_type": "jsonline",
+              "ext": "jsonl"
+          },
+          "schema": {
+              "joint_positions": {
+                  "dtype": "float32",
+                  "kind": "array",
+                  "shape": [6]
+              },
+              "ee_positions": {
+                  "dtype": "float32",
+                  "kind": "array",
+                  "shape": [7]
+              },
+              "gripper": {
+                  "dtype": "float32",
+                  "kind": "value"
+              },
+              "timestamp": {
+                  "dtype": "float32",
+                  "kind": "value"
+              }
+          }
+      },
+      "right_arm": {
+          "fps": 50,
+          "file_meta": {
+              "file_type": "jsonline",
+              "ext": "jsonl"
+          },
+          "schema": {
+              "joint_positions": {
+                  "dtype": "float32",
+                  "kind": "array",
+                  "shape": [6]
+              },
+              "ee_positions": {
+                  "dtype": "float32",
+                  "kind": "array",
+                  "shape": [7]
+              },
+              "gripper": {
+                  "dtype": "float32",
+                  "kind": "value"
+              },
+              "timestamp": {
+                  "dtype": "float32",
+                  "kind": "value"
+              }
+          }
+      },
+      "car": {
+          "fps": 50,
+          "file_meta": {
+              "file_type": "jsonline",
+              "ext": "jsonl"
+          },
+          "schema": {
+              "v": {
+                  "dtype": "float32",
+                  "kind": "value"
+              },
+              "w": {
+                  "dtype": "float32",
+                  "kind": "value"
+              },
+              "timestamp": {
+                  "dtype": "float32",
+                  "kind": "value"
+              }
+          }
+      }
+  },
+  "sensors": {
+      "cam_front": {
+          "camera": [
+              {
+                  "fps": 30,
+                  "width": 640,
+                  "height": 480,
+                  "channel": 3,
+                  "camera_type": "rgb",
+                  "file_meta": {
+                      "codec": "libx264",
+                      "pix_fmt": "yuv420p",
+                      "ext": "mp4"
+                  }
+              },
+              {
+                  "fps": 30,
+                  "width": 640,
+                  "height": 480,
+                  "channel": 1,
+                  "camera_type": "depth",
+                  "file_meta": {
+                      "codec": "ffv1",
+                      "pix_fmt": "gray16le",
+                      "ext": "mkv"
+                  }
+              }
+          ]
+      },
+      "cam_left": {
+          "camera": [
+              {
+                  "fps": 30,
+                  "width": 640,
+                  "height": 480,
+                  "channel": 3,
+                  "camera_type": "rgb",
+                  "file_meta": {
+                      "codec": "libx264",
+                      "pix_fmt": "yuv420p",
+                      "ext": "mp4"
+                  }
+              },
+              {
+                  "fps": 30,
+                  "width": 640,
+                  "height": 480,
+                  "channel": 1,
+                  "camera_type": "depth",
+                  "file_meta": {
+                      "codec": "ffv1",
+                      "pix_fmt": "gray16le",
+                      "ext": "mkv"
+                  }
+              }
+          ]
+      },
+      "cam_right": {
+        "camera": [
+            {
+                "fps": 30,
+                "width": 640,
+                "height": 480,
+                "channel": 3,
+                "camera_type": "rgb",
+                "file_meta": {
+                    "codec": "libx264",
+                    "pix_fmt": "yuv420p",
+                    "ext": "mp4"
+                }
+            },
+            {
+                "fps": 30,
+                "width": 640,
+                "height": 480,
+                "channel": 1,
+                "camera_type": "depth",
+                "file_meta": {
+                    "codec": "ffv1",
+                    "pix_fmt": "gray16le",
+                    "ext": "mkv"
+                }
+            }
+        ]
+    }
+  },
+  "extra": {}
+}
+

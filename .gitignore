@@ -1,0 +1,58 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# Data and logs
+eps/
+airbot_logs/
+*.log
+*.bson
+*.mcap
+*.mkv
+*.mp4
+
+# Cached data
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Zip archives (binary files)
+*.zip
+
+# Ubuntu deb packages (compiled, not source)
+*.deb
+
+# Recorded episodes
+episodes/
+
+# Test datasets
+lr_dataset_test/
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Embedded git repositories (these have their own .git)
+airbot/5.1.6/airbot-data-5.1.6.4/data-collection/
+dagger_data_collection/
+
+# Binary/distribution files
+airbot/5.1.6/*.zip
+airbot/5.1.6/airbot_py-5.1.6-py3-none-any.whl
+airbot/5.1.6/*.deb

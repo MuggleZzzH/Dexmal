@@ -1,0 +1,2 @@
+gnome-terminal -- bash -c "conda init; conda activate airbot; airbot_server -i can_left -p 50051; exec bash"
+gnome-terminal -- bash -c "conda init; conda activate airbot; airbot_server -i can_right -p 50053; exec bash"

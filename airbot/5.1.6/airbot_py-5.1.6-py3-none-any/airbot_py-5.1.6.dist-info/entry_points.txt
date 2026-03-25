@@ -1,0 +1,16 @@
+[console_scripts]
+arm_end_pose = airbot_examples.get_end_pose:get_end_pose
+arm_example_swing = airbot_examples.task_swing:task_swing
+arm_example_wipe = airbot_examples.task_wipe:task_wipe
+arm_follow = airbot_examples.task_follow:follow
+arm_get_params = airbot_examples.get_params:get_params
+arm_joint_state = airbot_examples.get_joint_pos:get_joint_pos
+arm_kbd_ctrl = airbot_examples.task_kbd_ctrl:task_kbd_ctrl
+arm_load_app = airbot_examples.app_load:app_load
+arm_move_cart_pose = airbot_examples.move_cart_pose:move_cart_pose
+arm_move_cart_waypoints = airbot_examples.move_with_cart_waypoints:move_with_cart_waypoints
+arm_move_joint = airbot_examples.move_joint_pos:move_joint_pos
+arm_move_joint_waypoints = airbot_examples.move_with_joint_waypoints:move_with_joint_waypoints
+arm_set_params = airbot_examples.set_params:set_params
+arm_switch_mode = airbot_examples.switch_mode:switch_mode
+arm_unload_app = airbot_examples.app_unload:app_unload
