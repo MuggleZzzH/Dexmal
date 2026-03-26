@@ -11,14 +11,6 @@ class DataCollectionConfig:
     left_camera_id = "419622073493"
     right_camera_id = "420122070742"
 
-    # fold towel task specific placeholders
-    left_home_joint = [0, 0, 0, 1.5, 0, -1.5]
-    right_home_joint = [0, 0, 0, 1.5, 0, -1.5]
-    left_input_pose = None
-    right_input_pose = None
-    left_output_pose = None
-    right_output_pose = None
-
     # for data conversion
     repo_id: str = "fold_towel"
     root_dir: str = os.path.join(BASE_DIR, "lr_dataset")

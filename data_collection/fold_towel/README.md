@@ -37,18 +37,14 @@ python /Users/mugglezzzh/WorkSpace/Rlinf_Proj/Dexmal/data_collection/fold_towel/
 python /Users/mugglezzzh/WorkSpace/Rlinf_Proj/Dexmal/data_collection/fold_towel/convert_to_lerobot.py
 ```
 
-## 当前可独立调整的重点项
+## 当前和主目录的差异
 
-在 `config.py` 里已经预留了叠毛巾任务自己的配置入口：
+这里尽量保持和主目录 `data_collection` 下默认版本一致，当前只保留这类必要差异：
 
-- `left_home_joint`
-- `right_home_joint`
-- `left_input_pose`
-- `right_input_pose`
-- `left_output_pose`
-- `right_output_pose`
-
-目前这些位置参数只是先留作任务专属配置位，还没有绑定到控制逻辑里。这样先把任务隔离做好，后面再逐步把“输入位 / 输出位 / 复位位”真正接入动作流程。
+- 任务名和 prompt 改成叠毛巾
+- 数据保存路径改到本目录自己的 `eps/`
+- 数据转换输出路径改到本目录自己的 `lr_dataset/`
+- `repo_id` 改成 `fold_towel`
 
 ## 路径约定
 
