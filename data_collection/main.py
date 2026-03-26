@@ -3,6 +3,7 @@ import datetime
 import json
 import logging
 import os
+import queue
 import sys
 import termios
 import threading
@@ -20,6 +21,10 @@ logging.basicConfig(
     format="[%(asctime)s] [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+COMMAND_KEYS = {"a", "b", "c", "q"}
+DEBOUNCE_SECONDS = 0.5
+SAMPLE_INTERVAL = 0.005
 
 
 class WSClient:
@@ -140,82 +145,80 @@ class Robot:
         }
 
 
-def preparing():
-    logging.info("Please wait...")
-    time.sleep(3)
-    logging.info("Press S to start or Q to exit")
-    while True:
-        ch = getch()
-        if ch == "s" or ch == "S":
-            break
-        elif ch == "q" or ch == "Q":
-            exit(-1)
-        time.sleep(0.01)
+class PedalListener(threading.Thread):
+    def __init__(self, command_queue: queue.Queue, stop_event: threading.Event):
+        super().__init__(daemon=True)
+        self.command_queue = command_queue
+        self.stop_event = stop_event
+        self.last_trigger_time = 0.0
 
-
-def iter_action(robot: Robot):
-    collecting = True
-
-    def interrupt():
-        nonlocal collecting
-        logging.info("Collecting... (Press Q to quit)")
-        while True:
+    def run(self):
+        while not self.stop_event.is_set():
             ch = getch()
-            if ch == "q" or ch == "Q":
-                logging.info("Exiting...")
-                collecting = False
-                break
-            time.sleep(0.01)
+            key = ch.lower()
+            if key not in COMMAND_KEYS:
+                continue
 
-    threading.Thread(target=interrupt, daemon=True).start()
+            now = time.monotonic()
+            if now - self.last_trigger_time < DEBOUNCE_SECONDS:
+                logging.info("Ignore %s: still in debounce window", key.upper())
+                continue
 
-    while collecting is True:
-        yield robot.get()
-        time.sleep(0.005)
+            self.last_trigger_time = now
+            self.command_queue.put(key)
 
 
-def main():
-    meta_template_path = "meta_template.json"
-    meta_template = Meta.from_file(meta_template_path)
+class EpisodeManager:
+    def __init__(self, meta_template: Meta, config: DataCollectionConfig, root_dir: str):
+        self.meta_template = meta_template
+        self.config = config
+        self.root_dir = root_dir
+        self.lock = threading.Lock()
+        self.recorder = None
+        self.has_unsaved_data = False
 
-    # get information for meta.json or logic
-    config = DataCollectionConfig()
-    root_dir = os.path.join(config.save_root_dir, datetime.datetime.now().strftime("%Y%m%d"))
+    def _build_sensor_map(self):
+        return {
+            "cam_front": RealSense(
+                serial_number=self.config.top_camera_id,
+                width=640,
+                height=480,
+                depth=True,
+                fps=30,
+            ),
+            "cam_left": RealSense(
+                serial_number=self.config.left_camera_id,
+                width=640,
+                height=480,
+                depth=True,
+                fps=30,
+            ),
+            "cam_right": RealSense(
+                serial_number=self.config.right_camera_id,
+                width=640,
+                height=480,
+                depth=True,
+                fps=30,
+            ),
+        }
 
-    # get sensor map
-    sensor_map = {
-        "cam_front": RealSense(
-            serial_number=config.top_camera_id,
-            width=640,
-            height=480,
-            depth=True,
-            fps=30,
-        ),
-        "cam_left": RealSense(
-            serial_number=config.left_camera_id,
-            width=640,
-            height=480,
-            depth=True,
-            fps=30,
-        ),
-        "cam_right": RealSense(
-            serial_number=config.right_camera_id,
-            width=640,
-            height=480,
-            depth=True,
-            fps=30,
-        ),
-    }
+    def _create_recorder(self):
+        return Recorder(
+            meta=self.meta_template,
+            root=self.root_dir,
+            sensor_map=self._build_sensor_map(),
+        )
 
-    robot = Robot()
-    recorder = Recorder(meta=meta_template, root=root_dir, sensor_map=sensor_map)
-    try:
-        preparing()
-        robot.connect()
-        recorder.start()
+    def is_collecting(self) -> bool:
+        with self.lock:
+            return self.recorder is not None
 
-        logging.info("Hello, airbot!")
-        for action in iter_action(robot):
+    def append_action(self, action) -> bool:
+        with self.lock:
+            recorder = self.recorder
+            if recorder is None:
+                return False
+
             for action_key in ["left_arm", "right_arm"]:
                 recorder.append(
                     recorder.meta.get_action_name(action_key),
@@ -231,12 +234,178 @@ def main():
                 {"v": action["car"]["v"], "w": action["car"]["w"]},
                 timestamp=action["car"]["timestamp"],
             )
-        logging.info("Data collection completed successfully")
-        recorder.commit()
+            self.has_unsaved_data = True
+            return True
+
+    def _detach_recorder(self):
+        with self.lock:
+            recorder = self.recorder
+            has_unsaved_data = self.has_unsaved_data
+            self.recorder = None
+            self.has_unsaved_data = False
+        return recorder, has_unsaved_data
+
+    def _attach_recorder(self, recorder):
+        with self.lock:
+            self.recorder = recorder
+            self.has_unsaved_data = False
+
+    def _finalize_recorder(self, recorder, has_unsaved_data: bool, save: bool, label: str):
+        if recorder is None:
+            return
+
+        if save and has_unsaved_data:
+            result = recorder.commit()
+            if result is None:
+                logging.info("%s committed", label)
+            else:
+                logging.info("%s committed: %s", label, result)
+            return
+
+        recorder.rollback()
+        if save:
+            logging.info("%s skipped save because no frame was collected", label)
+        else:
+            logging.info("%s discarded", label)
+
+    def start_new_episode(self):
+        recorder, has_unsaved_data = self._detach_recorder()
+        if recorder is not None:
+            self._finalize_recorder(
+                recorder,
+                has_unsaved_data,
+                save=has_unsaved_data,
+                label="Previous episode",
+            )
+
+        recorder = self._create_recorder()
+        recorder.start()
+        self._attach_recorder(recorder)
+        logging.info("Started a new episode")
+
+    def discard_current_episode(self):
+        recorder, has_unsaved_data = self._detach_recorder()
+        if recorder is None:
+            logging.info("Ignore B: no active episode")
+            return
+
+        self._finalize_recorder(
+            recorder,
+            has_unsaved_data,
+            save=False,
+            label="Current episode",
+        )
+        logging.info("Recorder is idle. Press A to start the next episode")
+
+    def save_current_episode(self):
+        recorder, has_unsaved_data = self._detach_recorder()
+        if recorder is None:
+            logging.info("Ignore C: no active episode")
+            return
+
+        self._finalize_recorder(
+            recorder,
+            has_unsaved_data,
+            save=True,
+            label="Current episode",
+        )
+        logging.info("Recorder is idle. Press A to start the next episode")
+
+    def close(self, save_active: bool):
+        recorder, has_unsaved_data = self._detach_recorder()
+        if recorder is None:
+            return
+
+        self._finalize_recorder(
+            recorder,
+            has_unsaved_data,
+            save=save_active,
+            label="Active episode on shutdown",
+        )
+
+
+def sampling_loop(
+    robot: Robot,
+    episode_manager: EpisodeManager,
+    stop_event: threading.Event,
+    error_queue: queue.Queue,
+):
+    while not stop_event.is_set():
+        try:
+            action = robot.get()
+            episode_manager.append_action(action)
+        except Exception as exc:
+            logging.exception("Sampling loop failed")
+            try:
+                error_queue.put_nowait(exc)
+            except queue.Full:
+                pass
+            stop_event.set()
+            break
+        time.sleep(SAMPLE_INTERVAL)
+
+
+def main():
+    meta_template_path = "meta_template.json"
+    meta_template = Meta.from_file(meta_template_path)
+
+    config = DataCollectionConfig()
+    root_dir = os.path.join(config.save_root_dir, datetime.datetime.now().strftime("%Y%m%d"))
+    os.makedirs(root_dir, exist_ok=True)
+
+    command_queue = queue.Queue()
+    error_queue = queue.Queue(maxsize=1)
+    stop_event = threading.Event()
+    robot = Robot()
+    episode_manager = EpisodeManager(meta_template=meta_template, config=config, root_dir=root_dir)
+    pedal_listener = PedalListener(command_queue=command_queue, stop_event=stop_event)
+    sample_thread = threading.Thread(
+        target=sampling_loop,
+        args=(robot, episode_manager, stop_event, error_queue),
+        daemon=True,
+    )
+
+    try:
+        robot.connect()
+        sample_thread.start()
+        pedal_listener.start()
+
+        logging.info("Pedal ready: A start new episode, B discard current episode, C save current episode, Q exit")
+        logging.info("Recorder is idle. Press A to start collecting")
+
+        while not stop_event.is_set():
+            try:
+                sampling_error = error_queue.get_nowait()
+            except queue.Empty:
+                sampling_error = None
+
+            if sampling_error is not None:
+                raise sampling_error
+
+            try:
+                command = command_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if command == "a":
+                if episode_manager.is_collecting():
+                    logging.info("A pressed: saving current episode and starting a new one")
+                episode_manager.start_new_episode()
+            elif command == "b":
+                episode_manager.discard_current_episode()
+            elif command == "c":
+                episode_manager.save_current_episode()
+            elif command == "q":
+                logging.info("Q pressed: exiting and saving active episode if needed")
+                stop_event.set()
     except Exception:
         logging.exception("Data collection failed")
-        recorder.rollback()
     finally:
+        stop_event.set()
+        try:
+            episode_manager.close(save_active=True)
+        except Exception:
+            logging.exception("Failed to finalize active episode on shutdown")
         robot.disconnect()
 
 
