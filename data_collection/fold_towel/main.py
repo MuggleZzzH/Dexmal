@@ -357,6 +357,7 @@ def main():
     command_queue = queue.Queue()
     error_queue = queue.Queue(maxsize=1)
     stop_event = threading.Event()
+    save_active_episode_on_shutdown = True
     robot = Robot()
     episode_manager = EpisodeManager(meta_template=meta_template, config=config, root_dir=root_dir)
     pedal_listener = PedalListener(command_queue=command_queue, stop_event=stop_event)
@@ -397,14 +398,15 @@ def main():
             elif command == "c":
                 episode_manager.save_current_episode()
             elif command == "q":
-                logging.info("Q pressed: exiting and saving active episode if needed")
+                logging.info("Q pressed: exiting and discarding active episode")
+                save_active_episode_on_shutdown = False
                 stop_event.set()
     except Exception:
         logging.exception("Data collection failed")
     finally:
         stop_event.set()
         try:
-            episode_manager.close(save_active=True)
+            episode_manager.close(save_active=save_active_episode_on_shutdown)
         except Exception:
             logging.exception("Failed to finalize active episode on shutdown")
         robot.disconnect()
