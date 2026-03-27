@@ -332,6 +332,9 @@ def sampling_loop(
     error_queue: queue.Queue,
 ):
     while not stop_event.is_set():
+        if not episode_manager.is_collecting():
+            time.sleep(SAMPLE_INTERVAL)
+            continue
         try:
             action = robot.get()
             episode_manager.append_action(action)
@@ -359,17 +362,12 @@ def main():
     stop_event = threading.Event()
     save_active_episode_on_shutdown = True
     robot = Robot()
+    robot_connected = False
     episode_manager = EpisodeManager(meta_template=meta_template, config=config, root_dir=root_dir)
     pedal_listener = PedalListener(command_queue=command_queue, stop_event=stop_event)
-    sample_thread = threading.Thread(
-        target=sampling_loop,
-        args=(robot, episode_manager, stop_event, error_queue),
-        daemon=True,
-    )
+    sample_thread = None
 
     try:
-        robot.connect()
-        sample_thread.start()
         pedal_listener.start()
 
         logging.info("Pedal ready: A start new episode, B discard current episode, C save current episode, Q exit")
@@ -390,6 +388,15 @@ def main():
                 continue
 
             if command == "a":
+                if not robot_connected:
+                    robot.connect()
+                    sample_thread = threading.Thread(
+                        target=sampling_loop,
+                        args=(robot, episode_manager, stop_event, error_queue),
+                        daemon=True,
+                    )
+                    sample_thread.start()
+                    robot_connected = True
                 if episode_manager.is_collecting():
                     logging.info("A pressed: saving current episode and starting a new one")
                 episode_manager.start_new_episode()
@@ -409,7 +416,8 @@ def main():
             episode_manager.close(save_active=save_active_episode_on_shutdown)
         except Exception:
             logging.exception("Failed to finalize active episode on shutdown")
-        robot.disconnect()
+        if robot_connected:
+            robot.disconnect()
 
 
 if __name__ == "__main__":
