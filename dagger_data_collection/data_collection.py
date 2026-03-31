@@ -69,12 +69,58 @@ RECEIVE_ACTION_LIST = []
 HISTORY_ACTION_QUEUE = []
 IN_ROLLBACK = False
 active_connections = []
+STATE_LOCK = threading.Lock()
+ACTION_HORIZON = 50
+ACTION_DIM = 14
+OBSERVATION_TIMEOUT_SECONDS = 5.0
+OBS_ID_COUNTER = 0
+CURRENT_OBS_ID = None
+CURRENT_OBS_TIMESTAMP = 0.0
+WAITING_FOR_ACTION = False
 
 class CollectMode(BaseModel):
     collect_mode: int
 
 class InferAction(BaseModel):
     action_list: list
+    obs_id: int
+    action_horizon: int | None = None
+    action_source: str | None = None
+    client_timestamp: float | None = None
+    dry_run: bool = False
+
+
+def _empty_infer_response() -> Response:
+    return Response(content=pickle.dumps({}), media_type="application/octet-stream")
+
+
+def _reset_inference_state(*, clear_queue: bool) -> None:
+    global CURRENT_OBS_ID
+    global CURRENT_OBS_TIMESTAMP
+    global WAITING_FOR_ACTION
+    global RECEIVE_ACTION_LIST
+
+    CURRENT_OBS_ID = None
+    CURRENT_OBS_TIMESTAMP = 0.0
+    WAITING_FOR_ACTION = False
+    if clear_queue:
+        RECEIVE_ACTION_LIST = []
+
+
+def _validate_action_chunk(action_list) -> list[list[float]]:
+    if len(action_list) != ACTION_HORIZON:
+        raise ValueError(
+            f"Expected action_list length {ACTION_HORIZON}, got {len(action_list)}"
+        )
+
+    normalized = []
+    for index, action in enumerate(action_list):
+        if len(action) != ACTION_DIM:
+            raise ValueError(
+                f"Expected action dim {ACTION_DIM} at step {index}, got {len(action)}"
+            )
+        normalized.append([float(value) for value in action])
+    return normalized
 
 @app.get("/state")
 def get_follow_robot_state():
@@ -105,7 +151,16 @@ def get_cotrol_mode_state():
 @app.post("/mode")
 def set_control_mode(item: CollectMode):
     global SET_MODE
-    SET_MODE = int(item.collect_mode)
+    mode = int(item.collect_mode)
+    if mode == 2 and not dos_config.USE_LEAD_ARMS:
+        return JSONResponse(
+            status_code=409,
+            content={"code": 409, "msg": "manual mode unavailable without lead arms", "data": mode},
+        )
+    with STATE_LOCK:
+        if mode in (0, 1, 2, 3, 11):
+            _reset_inference_state(clear_queue=True)
+        SET_MODE = mode
     return {"code": 200, "msg": "success", "data": SET_MODE}
 
 @app.get("/infer_state")
@@ -119,31 +174,72 @@ def get_state():
     global RIGHT_GRIPPER
     global CONTROL_MODE
     global RECEIVE_ACTION_LIST
-    # print (RECEIVE_ACTION_LIST)
-    if CONTROL_MODE != 1 or len(RECEIVE_ACTION_LIST) != 0:
-        return Response(content=pickle.dumps({}), media_type='application/octet-stream')
-        # return {}
-    image_size = (640,480)
-    resize_method = cv2.resize
-    # get img
-    images_dict = {}
-    img_high = resize_method(SEND_FRONT_IMG, image_size)
-    images_dict['high'] = cv2.imencode('.png', img_high)[-1].tobytes()
-    img_left = resize_method(SEND_LEFT_IMG, image_size)
-    images_dict['left_hand'] = cv2.imencode('.png', img_left)[-1].tobytes()
-    img_right = resize_method(SEND_RIGHT_IMG, image_size)
-    images_dict['right_hand'] = cv2.imencode('.png', img_right)[-1].tobytes()
-    # get state
-    action = LEFT_JOINT + [LEFT_GRIPPER] + RIGHT_JOINT + [RIGHT_GRIPPER]
-    # get dict
+    now = time.time()
+    with STATE_LOCK:
+        global OBS_ID_COUNTER
+        global CURRENT_OBS_ID
+        global CURRENT_OBS_TIMESTAMP
+        global WAITING_FOR_ACTION
+
+        if WAITING_FOR_ACTION and now - CURRENT_OBS_TIMESTAMP > OBSERVATION_TIMEOUT_SECONDS:
+            logging.warning("Observation %s timed out waiting for action; releasing token", CURRENT_OBS_ID)
+            _reset_inference_state(clear_queue=False)
+
+        if CONTROL_MODE != 1 or len(RECEIVE_ACTION_LIST) != 0 or WAITING_FOR_ACTION:
+            return _empty_infer_response()
+
+        if not (
+            isinstance(SEND_FRONT_IMG, np.ndarray)
+            and SEND_FRONT_IMG.size > 0
+            and isinstance(SEND_LEFT_IMG, np.ndarray)
+            and SEND_LEFT_IMG.size > 0
+            and isinstance(SEND_RIGHT_IMG, np.ndarray)
+            and SEND_RIGHT_IMG.size > 0
+        ):
+            return _empty_infer_response()
+
+        state_14d = LEFT_JOINT + [LEFT_GRIPPER] + RIGHT_JOINT + [RIGHT_GRIPPER]
+        if len(state_14d) != ACTION_DIM:
+            return _empty_infer_response()
+
+        front_img = SEND_FRONT_IMG.copy()
+        left_img = SEND_LEFT_IMG.copy()
+        right_img = SEND_RIGHT_IMG.copy()
+
+        OBS_ID_COUNTER += 1
+        CURRENT_OBS_ID = OBS_ID_COUNTER
+        CURRENT_OBS_TIMESTAMP = now
+        WAITING_FOR_ACTION = True
+        obs_id = CURRENT_OBS_ID
+        mode = CONTROL_MODE
+        pending_actions = len(RECEIVE_ACTION_LIST)
+
+    try:
+        image_size = (640, 480)
+        images_dict = {
+            "high": cv2.imencode(".png", cv2.resize(front_img, image_size))[-1].tobytes(),
+            "left_hand": cv2.imencode(".png", cv2.resize(left_img, image_size))[-1].tobytes(),
+            "right_hand": cv2.imencode(".png", cv2.resize(right_img, image_size))[-1].tobytes(),
+        }
+    except Exception:
+        with STATE_LOCK:
+            if CURRENT_OBS_ID == obs_id:
+                _reset_inference_state(clear_queue=False)
+        logging.exception("Failed to encode inference images")
+        return _empty_infer_response()
+
     state_data = {
+        "obs_id": obs_id,
+        "timestamp": now,
+        "mode": mode,
+        "pending_actions": pending_actions,
+        "state": "GOOD",
+        "state_14d": state_14d,
+        "action": state_14d,
+        "action_horizon": ACTION_HORIZON,
         "images": images_dict,
-        "action": action,
-        "pending_actions": len(RECEIVE_ACTION_LIST),
-        "timestamp": time.time(),
-        "state": "GOOD"
     }
-    return Response(content=pickle.dumps(state_data), media_type='application/octet-stream')
+    return Response(content=pickle.dumps(state_data), media_type="application/octet-stream")
 
 @app.websocket("/ws/images")
 async def websocket_images(websocket: WebSocket):
@@ -232,9 +328,73 @@ async def websocket_images(websocket: WebSocket):
 def get_action(item:InferAction):
     global RECEIVE_ACTION_LIST
     global HISTORY_ACTION_QUEUE
-    RECEIVE_ACTION_LIST = item.action_list
-    HISTORY_ACTION_QUEUE.append(item.action_list[-1])
-    # print ("hh ", HISTORY_ACTION_QUEUE)
+    try:
+        normalized_actions = _validate_action_chunk(item.action_list)
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"code": 400, "msg": str(exc), "data": None},
+        )
+
+    if item.action_horizon is not None and item.action_horizon != ACTION_HORIZON:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "code": 400,
+                "msg": f"Expected action_horizon={ACTION_HORIZON}, got {item.action_horizon}",
+                "data": None,
+            },
+        )
+
+    with STATE_LOCK:
+        if CONTROL_MODE != 1:
+            return JSONResponse(
+                status_code=409,
+                content={"code": 409, "msg": "robot is not in model mode", "data": None},
+            )
+        if len(RECEIVE_ACTION_LIST) != 0:
+            return JSONResponse(
+                status_code=409,
+                content={"code": 409, "msg": "pending action chunk still executing", "data": None},
+            )
+        if not WAITING_FOR_ACTION or CURRENT_OBS_ID is None:
+            return JSONResponse(
+                status_code=409,
+                content={"code": 409, "msg": "no outstanding observation token", "data": None},
+            )
+        if item.obs_id != CURRENT_OBS_ID:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "code": 409,
+                    "msg": f"stale obs_id {item.obs_id}, expected {CURRENT_OBS_ID}",
+                    "data": None,
+                },
+            )
+
+        accepted_obs_id = CURRENT_OBS_ID
+        if item.dry_run:
+            _reset_inference_state(clear_queue=False)
+            return {
+                "code": 200,
+                "msg": "shadow action accepted",
+                "data": {"obs_id": accepted_obs_id, "queued_actions": 0, "dry_run": True},
+            }
+
+        RECEIVE_ACTION_LIST = normalized_actions
+        HISTORY_ACTION_QUEUE.append(normalized_actions[-1])
+        _reset_inference_state(clear_queue=False)
+
+    return {
+        "code": 200,
+        "msg": "success",
+        "data": {
+            "obs_id": accepted_obs_id,
+            "queued_actions": len(normalized_actions),
+            "action_source": item.action_source,
+            "client_timestamp": item.client_timestamp,
+        },
+    }
 
 UI_STATIC_DIR = Path(os.path.join(os.path.dirname(__file__), "static", "ui"))
 @app.get("/ui")
@@ -567,29 +727,60 @@ class AirbotDataCollection:
         def interrupt():
             global SET_MODE
             global IN_ROLLBACK
+            global RECEIVE_ACTION_LIST
+            global CONTROL_MODE
+            global HISTORY_ACTION_QUEUE
+            last_processed_mode = None
             while True:
                 set_mode = SET_MODE
+                if set_mode == last_processed_mode:
+                    time.sleep(0.01)
+                    continue
                 if set_mode == 11:
-                    RECEIVE_ACTION_LIST = []
                     logging.info("Exiting...")
-                    self.collect_mode = -1
-                    CONTROL_MODE = -1
+                    with STATE_LOCK:
+                        _reset_inference_state(clear_queue=True)
+                        self.collect_mode = -1
+                        CONTROL_MODE = -1
                     time.sleep(1.0)
                     self.collecting = False
                     break
                 if set_mode == 2:
-                    self.collect_mode = 2
+                    if not getattr(self.robot.robot.config_, "USE_LEAD_ARMS", False):
+                        logging.warning("Manual mode requested but lead arms are disabled; staying in stop mode")
+                        with STATE_LOCK:
+                            SET_MODE = 0
+                            self.collect_mode = 0
+                            CONTROL_MODE = 0
+                        last_processed_mode = 0
+                        time.sleep(0.05)
+                        continue
+                    with STATE_LOCK:
+                        self.collect_mode = 2
+                        CONTROL_MODE = 2
                 if set_mode == 0:
-                    self.collect_mode = 0
+                    with STATE_LOCK:
+                        _reset_inference_state(clear_queue=True)
+                        self.collect_mode = 0
+                        CONTROL_MODE = 0
                 if set_mode == 1:
-                    self.collect_mode = 1
+                    with STATE_LOCK:
+                        _reset_inference_state(clear_queue=True)
+                        self.collect_mode = 1
+                        CONTROL_MODE = 1
                 if set_mode == 3:
                     if self.collect_mode != 0:
+                        time.sleep(0.01)
                         continue
-                    if not len(HISTORY_ACTION_QUEUE):
+                    with STATE_LOCK:
+                        if not len(HISTORY_ACTION_QUEUE):
+                            time.sleep(0.01)
+                            continue
+                        tmp_action = HISTORY_ACTION_QUEUE.pop(-1)
+                        _reset_inference_state(clear_queue=True)
+                        IN_ROLLBACK = True
+                    if not len(tmp_action):
                         continue
-                    IN_ROLLBACK = True
-                    tmp_action = HISTORY_ACTION_QUEUE.pop(-1)
                     left_joint = tmp_action[:6]
                     left_gripper = tmp_action[6]
                     right_joint = tmp_action[7:13]
@@ -599,6 +790,7 @@ class AirbotDataCollection:
                     time.sleep(5.0)
                     print ("rollback done")
                     IN_ROLLBACK = False           
+                last_processed_mode = set_mode
                 time.sleep(0.01)
 
         def collect_joint_data():
@@ -608,15 +800,17 @@ class AirbotDataCollection:
             global RIGHT_GRIPPER
             while self.collecting:
                 data = self.robot.get_joint_pos()
-                LEFT_JOINT = data['left_arm']['joint_positions']
-                RIGHT_JOINT = data['right_arm']['joint_positions']
-                LEFT_GRIPPER = data['left_arm']['gripper']
-                RIGHT_GRIPPER = data['right_arm']['gripper']
+                with STATE_LOCK:
+                    LEFT_JOINT = data['left_arm']['joint_positions']
+                    RIGHT_JOINT = data['right_arm']['joint_positions']
+                    LEFT_GRIPPER = data['left_arm']['gripper']
+                    RIGHT_GRIPPER = data['right_arm']['gripper']
                 data['left_arm'].update({"mode_tag": self.collect_mode})
                 data['right_arm'].update({"mode_tag": self.collect_mode})
-                left_joint_data_file.append(data['left_arm'])
-                right_joint_data_file.append(data['right_arm'])
-                vehicle_data_file.append(data['base'])
+                if self.save:
+                    left_joint_data_file.append(data['left_arm'])
+                    right_joint_data_file.append(data['right_arm'])
+                    vehicle_data_file.append(data['base'])
                 time.sleep(0.005)
                 
         threading.Thread(target=collect_joint_data).start()
@@ -625,27 +819,36 @@ class AirbotDataCollection:
         total_frames = 0
         while self.collecting == True and total_frames < max_frames:
             ret = self.observer.get_frame()
-            SEND_LEFT_IMG = ret['left_camera']['color_image']
-            SEND_RIGHT_IMG = ret['right_camera']['color_image']
-            SEND_FRONT_IMG = ret['top_camera']['color_image']
+            with STATE_LOCK:
+                SEND_LEFT_IMG = ret['left_camera']['color_image']
+                SEND_RIGHT_IMG = ret['right_camera']['color_image']
+                SEND_FRONT_IMG = ret['top_camera']['color_image']
             total_frames += 1
-            # check move
-            left_lead_joint = self.robot.robot.left_lead_joint
-            right_lead_joint = self.robot.robot.right_lead_joint
-            LEAD_LEFT_JOINT = left_lead_joint[:6]
-            LEAD_LEFT_GRIPPER = left_lead_joint[6]
-            LEAD_RIGHT_JOINT = right_lead_joint[:6]
-            LEAD_RIGHT_GRIPPER = right_lead_joint[6]
-            CONTROL_MODE = self.collect_mode
+            if getattr(self.robot.robot.config_, "USE_LEAD_ARMS", False):
+                left_lead_joint = self.robot.robot.left_lead_joint
+                right_lead_joint = self.robot.robot.right_lead_joint
+                with STATE_LOCK:
+                    LEAD_LEFT_JOINT = left_lead_joint[:6]
+                    LEAD_LEFT_GRIPPER = left_lead_joint[6]
+                    LEAD_RIGHT_JOINT = right_lead_joint[:6]
+                    LEAD_RIGHT_GRIPPER = right_lead_joint[6]
+            else:
+                left_lead_joint = []
+                right_lead_joint = []
+                with STATE_LOCK:
+                    LEAD_LEFT_JOINT = []
+                    LEAD_LEFT_GRIPPER = -1.0
+                    LEAD_RIGHT_JOINT = []
+                    LEAD_RIGHT_GRIPPER = -1.0
+            with STATE_LOCK:
+                CONTROL_MODE = self.collect_mode
             # for relative joint control
             if self.collect_mode == 2:
-                print ("IN manual mode")
-                # clear model action queue
-                RECEIVE_ACTION_LIST = []
-                # self.history_action_queue.clear()
-                HISTORY_ACTION_QUEUE = []
+                with STATE_LOCK:
+                    _reset_inference_state(clear_queue=True)
+                    HISTORY_ACTION_QUEUE = []
                 if self.last_collect_mode != 2:
-                    print ("init manual")
+                    logging.info("Entering manual mode")
                     self.left_init_lead_joint = self.robot.robot.left_lead_joint
                     self.right_init_lead_joint = self.robot.robot.right_lead_joint
                     self.left_init_follow_joint = self.robot.robot.left_cur_joint
@@ -662,17 +865,17 @@ class AirbotDataCollection:
                 right_target_gripper = self.right_init_follow_joint[6] + delta_right_target_gripper
                 self.robot.robot.left_go_joint(left_target_joint, left_target_gripper, interp=False)
                 self.robot.robot.right_go_joint(right_target_joint, right_target_gripper, interp=False)
-                print ("go done")           
                 time.sleep(0.002)
                 self.last_collect_mode = 2
             elif self.collect_mode == 1:
-                print ("IN MODEL")
-                if not len(RECEIVE_ACTION_LIST):
+                with STATE_LOCK:
+                    if not len(RECEIVE_ACTION_LIST):
+                        tmp_action = None
+                    else:
+                        tmp_action = RECEIVE_ACTION_LIST.pop(0)
+                if tmp_action is None:
+                    time.sleep(0.002)
                     continue
-                print (len(RECEIVE_ACTION_LIST))
-                # time.sleep(2)
-                # RECEIVE_ACTION_LIST.pop(0)
-                tmp_action = RECEIVE_ACTION_LIST.pop(0)
                 left_joint = tmp_action[:6]
                 left_gripper = tmp_action[6]
                 right_joint = tmp_action[7:13]
@@ -682,14 +885,15 @@ class AirbotDataCollection:
                 self.last_collect_mode = 1
                 time.sleep(0.02)
             elif self.collect_mode == 0:
-                print ("IN STOP")
-                RECEIVE_ACTION_LIST = []
                 if not IN_ROLLBACK:
+                    with STATE_LOCK:
+                        _reset_inference_state(clear_queue=True)
                     self.robot.robot.left_target_joint_list = []
                     self.robot.robot.left_target_gripper_list = []
                     self.robot.robot.right_target_joint_list = []
                     self.robot.robot.right_target_gripper_list = []
                     self.last_collect_mode = 0
+                time.sleep(0.01)
                 
         self.collecting = False
     
@@ -726,7 +930,15 @@ if __name__ == '__main__':
     parser.add_argument('--operator', type=str, help='Operator', default='Unknown')
     parser.add_argument('--manager', type=str, help='Manager', default='Unknown')
     parser.add_argument('--job_uuid', type=str, help='job id from web', default='Unknown')
+    parser.add_argument(
+        '--enable-lead-arms',
+        action='store_true',
+        help='Enable lead arms for manual takeover mode. Disabled by default for eval deployment.',
+    )
     args = parser.parse_args()
+
+    dos_config.USE_LEAD_ARMS = args.enable_lead_arms
+    logging.info("Lead arms enabled: %s", dos_config.USE_LEAD_ARMS)
 
     meta_template.task_meta.operator = args.operator
     meta_template.task_meta.manager = args.manager

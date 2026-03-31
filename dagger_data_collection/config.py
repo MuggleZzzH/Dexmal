@@ -10,7 +10,7 @@ class DosW1Config:
     LEFT_CAMERA_SERIAL_NUMBER = "419622073493"
     RIGHT_CAMERA_SERIAL_NUMBER = "420122070742"
     # for lead arms
-    USE_LEAD_ARMS = True
+    USE_LEAD_ARMS = False
     LEAD_URDF_FILE = "/home/ubuntu/dos_w1/airbot/airbot_api/descriptions/airbot_urdf/replay/urdf/replay.urdf"
     LEAD_BASE_LINK = "base_link"
     LEAD_EE_LINK = "end_link"
