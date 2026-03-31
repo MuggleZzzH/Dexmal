@@ -143,6 +143,32 @@ def get_follow_robot_state():
     }
     return {"code": 200, "msg": "success", "data": ret_dict}
 
+
+@app.get("/runtime_state")
+def get_runtime_state():
+    global CONTROL_MODE
+    global SET_MODE
+    global CURRENT_OBS_ID
+    global WAITING_FOR_ACTION
+    global RECEIVE_ACTION_LIST
+    global LEFT_JOINT
+    global RIGHT_JOINT
+    global LEFT_GRIPPER
+    global RIGHT_GRIPPER
+    with STATE_LOCK:
+        return {
+            "code": 200,
+            "msg": "success",
+            "data": {
+                "control_mode": CONTROL_MODE,
+                "set_mode": SET_MODE,
+                "current_obs_id": CURRENT_OBS_ID,
+                "waiting_for_action": WAITING_FOR_ACTION,
+                "pending_actions": len(RECEIVE_ACTION_LIST),
+                "state_14d": LEFT_JOINT + [LEFT_GRIPPER] + RIGHT_JOINT + [RIGHT_GRIPPER],
+            },
+        }
+
 @app.get("/mode")
 def get_cotrol_mode_state():
     global CONTROL_MODE
@@ -381,9 +407,23 @@ def get_action(item:InferAction):
                 "data": {"obs_id": accepted_obs_id, "queued_actions": 0, "dry_run": True},
             }
 
+        current_state = np.asarray(
+            LEFT_JOINT + [LEFT_GRIPPER] + RIGHT_JOINT + [RIGHT_GRIPPER],
+            dtype=np.float32,
+        )
+        first_delta = np.asarray(normalized_actions[0], dtype=np.float32) - current_state
+        last_delta = np.asarray(normalized_actions[-1], dtype=np.float32) - current_state
         RECEIVE_ACTION_LIST = normalized_actions
         HISTORY_ACTION_QUEUE.append(normalized_actions[-1])
         _reset_inference_state(clear_queue=False)
+
+    logging.info(
+        "Accepted model chunk obs_id=%s queued=%d first_delta_max_abs=%.5f last_delta_max_abs=%.5f",
+        accepted_obs_id,
+        len(normalized_actions),
+        float(np.max(np.abs(first_delta))),
+        float(np.max(np.abs(last_delta))),
+    )
 
     return {
         "code": 200,
@@ -552,8 +592,16 @@ class RealsenseCamera:
 
         def update_frame():
             while self.running:
-                frame = self.pipeline.wait_for_frames(timeout_ms=2000)
-                self.frame = frame
+                try:
+                    frame = self.pipeline.wait_for_frames(timeout_ms=2000)
+                    self.frame = frame
+                except Exception as exc:
+                    logging.warning(
+                        "Camera %s frame wait failed: %s",
+                        self.serial_number,
+                        exc,
+                    )
+                    time.sleep(0.05)
         
         # time.sleep(2.0)
         self.task = threading.Thread(target=update_frame, daemon=True)
@@ -816,6 +864,41 @@ class AirbotDataCollection:
         threading.Thread(target=collect_joint_data).start()
         threading.Thread(target=interrupt).start()
 
+        def execute_model_actions():
+            global RECEIVE_ACTION_LIST
+            while self.collecting:
+                if self.collect_mode != 1:
+                    time.sleep(0.005)
+                    continue
+                with STATE_LOCK:
+                    if not len(RECEIVE_ACTION_LIST):
+                        tmp_action = None
+                        remaining_actions = 0
+                    else:
+                        tmp_action = RECEIVE_ACTION_LIST.pop(0)
+                        remaining_actions = len(RECEIVE_ACTION_LIST)
+                if tmp_action is None:
+                    time.sleep(0.002)
+                    continue
+                if remaining_actions == ACTION_HORIZON - 1:
+                    logging.info(
+                        "Starting model chunk execution first_step_left=%s first_step_right=%s",
+                        np.round(tmp_action[:7], 5).tolist(),
+                        np.round(tmp_action[7:], 5).tolist(),
+                    )
+                left_joint = tmp_action[:6]
+                left_gripper = tmp_action[6]
+                right_joint = tmp_action[7:13]
+                right_gripper = tmp_action[13]
+                self.robot.robot.left_go_joint(left_joint, left_gripper, interp=False)
+                self.robot.robot.right_go_joint(right_joint, right_gripper, interp=False)
+                if remaining_actions == 0:
+                    logging.info("Completed model chunk execution")
+                self.last_collect_mode = 1
+                time.sleep(0.02)
+
+        threading.Thread(target=execute_model_actions).start()
+
         total_frames = 0
         while self.collecting == True and total_frames < max_frames:
             ret = self.observer.get_frame()
@@ -868,22 +951,8 @@ class AirbotDataCollection:
                 time.sleep(0.002)
                 self.last_collect_mode = 2
             elif self.collect_mode == 1:
-                with STATE_LOCK:
-                    if not len(RECEIVE_ACTION_LIST):
-                        tmp_action = None
-                    else:
-                        tmp_action = RECEIVE_ACTION_LIST.pop(0)
-                if tmp_action is None:
-                    time.sleep(0.002)
-                    continue
-                left_joint = tmp_action[:6]
-                left_gripper = tmp_action[6]
-                right_joint = tmp_action[7:13]
-                right_gripper = tmp_action[13]
-                self.robot.robot.left_go_joint(left_joint, left_gripper, interp=False)
-                self.robot.robot.right_go_joint(right_joint, right_gripper, interp=False)
                 self.last_collect_mode = 1
-                time.sleep(0.02)
+                time.sleep(0.002)
             elif self.collect_mode == 0:
                 if not IN_ROLLBACK:
                     with STATE_LOCK:
