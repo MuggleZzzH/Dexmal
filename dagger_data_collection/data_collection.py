@@ -555,8 +555,15 @@ class RealsenseCamera:
         self.ready = False
         self.running = False
         self.index = 0
+        self.task = None
+        self.pipeline = None
+        self.config = None
+        self.save = save
+        self.color_vw = None
+        self.depth_vw = None
+        self.color_timestamp_file = None
+        self.depth_timestamp_file = None
         try:
-            self.save = save
             if save:
                 if not os.path.exists(vw_path):
                     os.makedirs(vw_path)
@@ -608,14 +615,22 @@ class RealsenseCamera:
         self.task.start()
 
     def stop(self):
-        if not self.ready:
+        if self.task is None and self.pipeline is None:
             return
         self.running = False
-        self.task.join()
-        self.pipeline.stop()
+        if self.task is not None and self.task.is_alive():
+            self.task.join(timeout=2.0)
+        self.task = None
+        if self.pipeline is not None:
+            try:
+                self.pipeline.stop()
+            except Exception as exc:
+                logging.warning("Failed to stop camera %s cleanly: %s", self.serial_number, exc)
         if self.save:
-            self.color_vw.release()
-            self.depth_vw.release()
+            if self.color_vw is not None:
+                self.color_vw.release()
+            if self.depth_vw is not None:
+                self.depth_vw.release()
 
     def __enter__(self):
         self.start()
@@ -672,9 +687,21 @@ class AirbotObserver:
         self.top_camera = RealsenseCamera(AirbotObserver.TOP_CAMERA_ID, save=save, vw_path=os.path.join(path, 'videos/'), sensor_name='cam_front')
 
     def start(self):
-        self.left_camera.start()
-        self.right_camera.start()
-        self.top_camera.start()
+        started_cameras = []
+        try:
+            self.left_camera.start()
+            started_cameras.append(self.left_camera)
+            self.right_camera.start()
+            started_cameras.append(self.right_camera)
+            self.top_camera.start()
+            started_cameras.append(self.top_camera)
+        except Exception:
+            for camera in reversed(started_cameras):
+                try:
+                    camera.stop()
+                except Exception:
+                    logging.exception("Failed to rollback started camera %s", camera.serial_number)
+            raise
 
     def stop(self):
         self.left_camera.stop()
