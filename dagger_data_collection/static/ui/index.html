@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOS-W1 RL Data Collection</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: #333;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            display: none; /* 隐藏原控制面板 */
+        }
+
+        #left-arm-panel {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            width: 520px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 100;
+        }
+
+        #right-arm-panel {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            width: 520px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 100;
+        }
+
+        .arm-panel h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 22px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .arm-panel h4 {
+            margin: 8px 0;
+            font-size: 16px;
+            color: #666;
+        }
+
+        .arm-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .arm-panel::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+        }
+
+        .arm-panel::-webkit-scrollbar-thumb {
+            background: rgba(0, 102, 204, 0.6);
+            border-radius: 4px;
+        }
+
+        .arm-panel::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 102, 204, 0.8);
+        }
+
+        .arm-panel {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(0, 102, 204, 0.6) rgba(0, 0, 0, 0.1);
+        }
+        
+        .joint-control {
+            margin-bottom: 8px;
+            padding: 6px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .arm-section {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.03);
+            border-radius: 6px;
+        }
+
+        .arm-section h4 {
+            margin: 0 0 6px 0;
+            font-size: 15px;
+            color: #0066cc;
+            border-bottom: 2px solid rgba(0, 102, 204, 0.3);
+            padding-bottom: 4px;
+        }
+
+        .joint-item {
+            margin-bottom: 10px;
+            padding: 10px 18px 10px 12px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .joint-item.diff-warning {
+            border: 2px solid #ff5252;
+            background: rgba(255, 82, 82, 0.05);
+        }
+
+        .joint-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .joint-name {
+            font-weight: bold;
+            font-size: 16px;
+            color: #333;
+            min-width: 60px;
+            flex-shrink: 0;
+        }
+
+        /* 美观的switch开关 */
+        .arm-control-switch {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .switch-label {
+            font-size: 14px;
+            color: #666;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 42px;
+            height: 22px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .switch-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #333;
+            transition: 0.3s;
+            border-radius: 22px;
+        }
+
+        .switch-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .switch input:checked + .switch-slider {
+            background-color: #2196F3;
+        }
+
+        .switch input:checked + .switch-slider:before {
+            transform: translateX(20px);
+        }
+
+        /* 可视化轴和圆点显示 */
+        .visual-axis-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+            flex: 1;
+            max-width: calc(100% - 150px);
+        }
+
+        .lead-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            width: 60px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .follow-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: #2196F3;
+            width: 60px;
+            text-align: left;
+            flex-shrink: 0;
+        }
+
+        .axis-track {
+            flex: 2;
+            position: relative;
+            height: 26px;
+            background: linear-gradient(to right, #e0e0e0 0%, #e0e0e0 100%);
+            border-radius: 13px;
+            overflow: visible;
+            pointer-events: none;
+            min-width: 200px;
+        }
+
+        .axis-dot {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            transition: left 0.1s ease;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+
+        .axis-dot.lead {
+            background: #333;
+            z-index: 2;
+        }
+
+        .axis-dot.follow {
+            background: #2196F3;
+            opacity: 0.7;
+            z-index: 1;
+        }
+
+        .slider-container {
+            position: absolute;
+            left: 60px;
+            right: 60px;
+            top: 0;
+            height: 100%;
+            pointer-events: auto;
+        }
+
+        .joint-slider-small {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 100%;
+            height: 26px;
+            background: transparent;
+            border-radius: 13px;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+            cursor: pointer;
+            opacity: 0;
+        }
+
+        .joint-slider-small::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 26px;
+            height: 26px;
+            background: transparent;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .joint-slider-small::-moz-range-thumb {
+            width: 26px;
+            height: 26px;
+            background: transparent;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        .diff-badge {
+            font-size: 13px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: #e0e0e0;
+            color: #666;
+            white-space: nowrap;
+            flex-shrink: 0;
+            min-width: 75px;
+            text-align: center;
+            margin-left: auto;
+            margin-right: 8px;
+        }
+
+        .diff-badge.warning {
+            background: #ff5252;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .joint-control label {
+            display: block;
+            margin-bottom: 2px;
+            font-size: 10px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+        
+        .joint-chinese {
+            color: #000000;
+            font-size: 11px;
+        }
+
+        .joint-english {
+            color: #666666;
+            font-size: 8px;
+            margin-left: 3px;
+        }
+
+        .range-info {
+            color: #666666;
+            font-size: 8px;
+            margin-bottom: 3px;
+            line-height: 1.1;
+        }
+        
+        .input-container {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .joint-slider {
+            flex: 1;
+            height: 3px;
+            background: #ddd;
+            border-radius: 2px;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        
+        .joint-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #0066cc;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .joint-slider::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            background: #0066cc;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .joint-number {
+            width: 50px;
+            padding: 1px 3px;
+            background: #fff;
+            border: 1px solid #ccc;
+            color: #333;
+            border-radius: 2px;
+            font-size: 9px;
+            height: 16px;
+        }
+        
+        .current-angle {
+            color: #0066cc;
+            font-weight: bold;
+            min-width: 30px;
+            text-align: center;
+            font-size: 9px;
+        }
+        
+        .info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-width: 1000px;
+            max-width: 95vw;
+            z-index: 10001;
+        }
+
+        .info-buttons-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: nowrap;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .button-group-divider {
+            width: 2px;
+            background: #ddd;
+            margin: 0 5px;
+        }
+        
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 0;
+            transition: all 0.3s ease;
+            font-size: 15px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        
+        button:hover:not(:disabled) {
+            background: #0080ff;
+        }
+        
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        /* 图像查看器下拉菜单 */
+        .image-viewer-dropdown {
+            position: relative;
+        }
+
+        .dropdown-toggle {
+            position: relative;
+        }
+
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 10px);
+            left: 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            min-width: 220px;
+            z-index: 10002;
+            padding: 8px 0;
+        }
+
+        .dropdown-menu.show {
+            display: block;
+        }
+
+        .dropdown-section {
+            padding: 8px 0;
+        }
+
+        .dropdown-section-title {
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .dropdown-item {
+            width: 100%;
+            padding: 10px 16px;
+            background: transparent;
+            color: #333;
+            text-align: left;
+            border: none;
+            border-radius: 0;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s ease;
+        }
+
+        .dropdown-item:hover {
+            background: #f0f0f0;
+        }
+
+        .dropdown-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .dropdown-text {
+            flex: 1;
+        }
+
+        .dropdown-status {
+            font-size: 14px;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .dropdown-status.hidden {
+            color: #ccc;
+        }
+
+        .dropdown-shortcut {
+            font-size: 12px;
+            color: #999;
+            font-family: monospace;
+            background: rgba(0, 0, 0, 0.05);
+            padding: 2px 6px;
+            border-radius: 3px;
+            white-space: nowrap;
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: #e0e0e0;
+            margin: 4px 0;
+        }
+
+
+        /* 设置弹窗样式 */
+        #settings-modal,
+        .settings-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #settings-modal.show,
+        .settings-modal.show {
+            display: flex;
+        }
+
+        .settings-content {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            width: 400px;
+            max-width: 400px;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .settings-content h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #0066cc;
+            padding-bottom: 10px;
+            flex-shrink: 0;
+        }
+
+        #key-bindings-list {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            padding-right: 5px;
+        }
+
+        #key-bindings-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #key-bindings-list::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+        }
+
+        #key-bindings-list::-webkit-scrollbar-thumb {
+            background: rgba(0, 102, 204, 0.6);
+            border-radius: 4px;
+        }
+
+        #key-bindings-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 102, 204, 0.8);
+        }
+
+        .key-binding-item {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 5px;
+        }
+
+        .key-binding-label {
+            flex: 1;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .key-binding-input {
+            width: 60px;
+            padding: 5px 10px;
+            font-size: 14px;
+            text-align: center;
+            text-transform: uppercase;
+            border: 2px solid #0066cc;
+            border-radius: 4px;
+            background: white;
+            font-weight: bold;
+        }
+
+        .settings-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 0;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
+
+        /* 设置项样式 */
+        .setting-item {
+            margin-bottom: 20px;
+        }
+
+        .setting-label {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 8px;
+        }
+
+        .setting-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .setting-desc {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .setting-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .setting-input:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+
+        /* 窗口尺寸调整弹窗样式 */
+        .resize-popover {
+            position: fixed;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 10000;
+            min-width: 300px;
+        }
+
+        .resize-popover h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 18px;
+            border-bottom: 2px solid #0066cc;
+            padding-bottom: 8px;
+        }
+
+        .resize-popover-content {
+            margin-bottom: 15px;
+        }
+
+        .resize-popover-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .popover-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .popover-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .popover-btn.primary {
+            background: #0066cc;
+            color: white;
+        }
+
+        .popover-btn.primary:hover {
+            background: #0080ff;
+        }
+
+
+        .settings-icon-btn {
+            position: fixed;
+            top: 40px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 24px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .settings-icon-btn:hover {
+            background: #0066cc;
+            color: white;
+            transform: rotate(90deg);
+            box-shadow: 0 4px 15px rgba(0,102,204,0.4);
+        }
+
+        /* API状态指示器 - 右上角 */
+        .api-status-container {
+            position: fixed;
+            top: 40px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .api-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            padding: 10px 20px;
+            border-radius: 25px;
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .api-status-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            transition: background 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .api-status-dot.stopped {
+            background: #FFC107;
+            box-shadow: 0 0 4px rgba(255, 193, 7, 0.8);
+        }
+
+        .api-status-dot.model {
+            background: #2196F3;
+            box-shadow: 0 0 4px rgba(33, 150, 243, 0.8);
+        }
+
+        .api-status-dot.manual {
+            background: #4CAF50;
+            box-shadow: 0 0 4px rgba(76, 175, 80, 0.8);
+        }
+
+        .api-status-dot.idle {
+            background: #9E9E9E;
+        }
+
+        .api-status-dot.disconnected {
+            background: #9E9E9E;
+        }
+
+        .api-status-text {
+            color: #333;
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        /* 臂控制按钮组 */
+        .arm-control-buttons {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+        }
+
+        .arm-control-buttons button {
+            flex: 1;
+        }
+
+        /* ==================== 图像查看器样式 ==================== */
+        .image-viewer-container {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            z-index: 900;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 100vw;
+            pointer-events: none;
+        }
+
+        .image-viewer-container > * {
+            pointer-events: auto;
+        }
+
+        .image-viewer-container.dragging {
+            cursor: move !important;
+            user-select: none;
+        }
+
+        /* 视图包装容器 */
+        .views-wrapper {
+            display: flex;
+            gap: 15px;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            overflow-y: visible;
+            width: 100%;
+            padding: 5px;
+        }
+
+        /* 横向滚动条样式 */
+        .views-wrapper::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .views-wrapper::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+        }
+
+        .views-wrapper::-webkit-scrollbar-thumb {
+            background: rgba(0, 102, 204, 0.6);
+            border-radius: 4px;
+        }
+
+        .views-wrapper::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 102, 204, 0.9);
+        }
+
+        /* 布局通知 */
+        .layout-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 102, 204, 0.95);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            z-index: 9999;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.3s ease;
+        }
+
+        .layout-notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .image-view-wrapper {
+            position: relative;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 给每个窗口设置初始 z-index */
+        #high-wrapper {
+            z-index: 3;
+        }
+
+        #left_hand-wrapper {
+            z-index: 2;
+        }
+
+        #right_hand-wrapper {
+            z-index: 1;
+        }
+
+        /* hover 时临时提升，但不改变点击顺序 */
+        .image-view-wrapper:hover {
+            z-index: 50 !important;
+        }
+
+        /* 拖拽时最高 */
+        .image-view-wrapper.dragging {
+            box-shadow: 0 8px 30px rgba(0, 102, 204, 0.7);
+            z-index: 100 !important;
+        }
+
+        .image-view-wrapper.hidden {
+            display: none;
+        }
+
+        .image-view-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            user-select: none;
+            position: relative;
+            z-index: 1;
+        }
+
+        .drag-handle {
+            cursor: move;
+            flex: 1;
+            display: flex;
+            align-items: center;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .image-view-drag-icon {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 18px;
+            margin-right: 8px;
+            cursor: move;
+            font-weight: bold;
+        }
+
+        .image-view-title {
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .image-view-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .image-view-btn {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-view-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .image-view-btn .btn-icon {
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .image-view-fps {
+            color: #4CAF50;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 8px;
+            background: rgba(76, 175, 80, 0.2);
+            border-radius: 4px;
+        }
+
+        .image-view-content {
+            position: relative;
+            width: 640px;  /* 原始分辨率宽度 */
+            height: 480px; /* 原始分辨率高度 */
+            overflow: hidden;
+            background: #000;
+            z-index: 20;
+        }
+
+        .image-view-content:fullscreen {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-view-content:fullscreen .image-view-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+        }
+
+        .image-view-canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            cursor: grab;
+        }
+
+        .image-view-canvas:active {
+            cursor: grabbing;
+        }
+
+        .image-view-loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            font-size: 16px;
+            pointer-events: none;
+        }
+
+        .resize-handle {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            width: 20px;
+            height: 20px;
+            cursor: nwse-resize;
+            z-index: 30;
+            background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%);
+        }
+
+        .resize-handle:hover {
+            background: linear-gradient(135deg, transparent 50%, rgba(33, 150, 243, 0.6) 50%);
+        }
+
+        .resize-handle::after {
+            content: '';
+            position: absolute;
+            right: 2px;
+            bottom: 2px;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 0 0 10px 10px;
+            border-color: transparent transparent rgba(255,255,255,0.8) transparent;
+        }
+    </style>
+  <script type="module" crossorigin src="/ui/assets/index-EERCrxKT.js"></script>
+</head>
+<body>
+    <div id="canvas-container">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <!-- 设置按钮 -->
+    <button class="settings-icon-btn" id="settings-btn" title="系统设置">⚙️</button>
+
+    <!-- 设置弹窗 -->
+    <div id="settings-modal">
+        <div class="settings-content">
+            <h2>系统设置</h2>
+            <div id="key-bindings-list"></div>
+            <div class="settings-buttons">
+                <button id="reset-bindings-btn">恢复默认</button>
+                <button id="save-bindings-btn">保存</button>
+                <button id="cancel-bindings-btn">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 窗口尺寸调整弹窗 -->
+    <div id="resize-popover" class="resize-popover" style="display: none;">
+        <h3>调整窗口尺寸</h3>
+        <div class="resize-popover-content">
+            <div class="setting-item">
+                <label for="resize-width-input" class="setting-label">
+                    <span class="setting-name">宽度（px）</span>
+                </label>
+                <input type="number" id="resize-width-input" class="setting-input" min="320" max="1920">
+            </div>
+
+            <div class="setting-item">
+                <label for="resize-height-input" class="setting-label">
+                    <span class="setting-name">高度（px）</span>
+                </label>
+                <input type="number" id="resize-height-input" class="setting-input" min="240" max="1080">
+            </div>
+        </div>
+        <div class="resize-popover-buttons">
+            <button id="resize-reset-btn" class="popover-btn">重置默认</button>
+            <button id="resize-cancel-btn" class="popover-btn">取消</button>
+            <button id="resize-apply-btn" class="popover-btn primary">应用</button>
+        </div>
+    </div>
+
+    <!-- API状态指示器 - 右上角 -->
+    <div class="api-status-container">
+        <div class="api-status" id="api-status">
+            <span class="api-status-dot disconnected" id="api-status-dot"></span>
+            <span class="api-status-text" id="api-status-text">离线</span>
+        </div>
+    </div>
+
+    <!-- 控制面板 - 顶部居中 -->
+    <div class="info">
+        <div class="info-buttons-row">
+            <div class="button-group image-viewer-dropdown">
+                <button id="image-viewer-menu-btn" class="dropdown-toggle">图像查看器 ▼</button>
+                <div class="dropdown-menu" id="image-viewer-menu">
+                    <div class="dropdown-section">
+                        <div class="dropdown-section-title">显示/隐藏</div>
+                        <button class="dropdown-item" data-action="toggle-view" data-view="high">
+                            <!-- <span class="dropdown-icon">👁️</span> -->
+                            <span class="dropdown-text">前视相机</span>
+                            <span class="dropdown-shortcut">[1]</span>
+                            <span class="dropdown-status" id="status-high">✓</span>
+                        </button>
+                        <button class="dropdown-item" data-action="toggle-view" data-view="left_hand">
+                            <!-- <span class="dropdown-icon">👁️</span> -->
+                            <span class="dropdown-text">左手相机</span>
+                            <span class="dropdown-shortcut">[2]</span>
+                            <span class="dropdown-status" id="status-left_hand">✓</span>
+                        </button>
+                        <button class="dropdown-item" data-action="toggle-view" data-view="right_hand">
+                            <!-- <span class="dropdown-icon">👁️</span> -->
+                            <span class="dropdown-text">右手相机</span>
+                            <span class="dropdown-shortcut">[3]</span>
+                            <span class="dropdown-status" id="status-right_hand">✓</span>
+                        </button>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section">
+                        <div class="dropdown-section-title">布局管理</div>
+                        <button class="dropdown-item" data-action="save-layout">
+                            <!-- <span class="dropdown-icon">💾</span> -->
+                            <span class="dropdown-text">保存布局</span>
+                            <span class="dropdown-shortcut">[Ctrl+S]</span>
+                        </button>
+                        <button class="dropdown-item" data-action="load-layout">
+                            <!-- <span class="dropdown-icon">📂</span> -->
+                            <span class="dropdown-text">加载布局</span>
+                            <span class="dropdown-shortcut">[Ctrl+L]</span>
+                        </button>
+                        <button class="dropdown-item" data-action="reset-layout">
+                            <!-- <span class="dropdown-icon">🔙</span> -->
+                            <span class="dropdown-text">重置布局</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="button-group-divider"></div>
+            <div class="button-group">
+                <button id="start-record-btn">开始录制 [R]</button>
+                <button id="stop-record-btn">结束录制 [S]</button>
+                <button id="rollback-btn">回退 [Z]</button>
+            </div>
+            <div class="button-group-divider"></div>
+            <div class="button-group">
+                <button id="stop-motion-btn">停止运动 [X]</button>
+                <button id="model-mode-btn">模型模式 [N]</button>
+                <button id="manual-mode-btn">手动模式 [M]</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 左臂控制面板 -->
+    <div class="arm-panel" id="left-arm-panel">
+        <h3>左臂控制</h3>
+        <div id="left-arm-controls"></div>
+        <div class="arm-control-buttons">
+            <button id="left-reset-btn">重置 [0]</button>
+            <button id="left-random-btn">随机 [Q]</button>
+            <button id="left-demo-btn">演示 [D]</button>
+        </div>
+    </div>
+
+    <!-- 右臂控制面板 -->
+    <div class="arm-panel" id="right-arm-panel">
+        <h3>右臂控制</h3>
+        <div id="right-arm-controls"></div>
+        <div class="arm-control-buttons">
+            <button id="right-reset-btn">重置 [0]</button>
+            <button id="right-random-btn">随机 [Q]</button>
+            <button id="right-demo-btn">演示 [D]</button>
+        </div>
+    </div>
+
+    <div id="controls" style="display: none;">
+        <div id="joint-controls"></div>
+    </div>
+    
+</body>
+</html>

@@ -1,0 +1,296 @@
+{
+  "robot_id": "dos_w1",
+  "task_meta": {
+    "task_id": "20251111",
+    "task_name": "fold the cloth",
+    "description": "placeholder",
+    "prompt": "fold the cloth",
+    "tags": {
+      "skill": [
+        "placeholder"
+      ],
+      "object": [
+        "placeholder"
+      ],
+      "environment": [
+        "placeholder"
+      ]
+    },
+    "episode_id": 1,
+    "episode_status": "CREATED",
+    "remark": "",
+    "inspector_remark": "",
+    "steps_info": [],
+    "operator": "",
+    "inspector": "",
+    "labeler": "",
+    "manager": "",
+    "job_uuid": "23dg",
+    "times": 500,
+    "inspect_start_time": 0.0,
+    "label_start_time": 0.0,
+    "start_time": 0.0,
+    "end_time": 0.0,
+    "frames": 1
+  },
+  "robot_meta": {
+    "robots": [
+      {
+        "robot_name": "dos_w1",
+        "robot_model": "aloha",
+        "robot_type": "arm",
+        "arms": [
+          "left",
+          "right"
+        ],
+        "movement": ["base"],
+        "robot_body": [],
+        "data_space": {
+          "robot_desc": {
+            "joint_positions": "关节角信息[6]",
+            "ee_positions": "末端位姿[7]",
+            "gripper": "夹爪开合状态[1]",
+            "timestamp": "时间戳[1]",
+            "mode_tag": "模式，0静止，1自动，2跟随"
+          },
+          "init_position": {
+            "arms": {
+              "left": {
+                "extrinsics": []
+              },
+              "right": {
+                "extrinsics": []
+              }
+            },
+            "movement": {},
+            "robot_body": {}
+          },
+          "schemas": {
+            "arms": {
+              "left": {
+                "type": "object",
+                "required": [
+                  "joint_positions",
+                  "ee_positions",
+                  "gripper",
+                  "timestamp",
+                  "mode_tag"
+                ],
+                "properties": {
+                  "joint_positions": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "ee_positions": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "gripper": {
+                    "type": "number"
+                  },
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "mode_tag": {
+                    "type": "number"
+                  }
+                }
+              },
+              "right": {
+                "type": "object",
+                "required": [
+                  "joint_positions",
+                  "ee_positions",
+                  "gripper",
+                  "timestamp",
+                  "mode_tag"
+                ],
+                "properties": {
+                  "joint_positions": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "ee_positions": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "gripper": {
+                    "type": "number"
+                  },
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "mode_tag": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "movement": {
+              "base": {
+                "type": "object",
+                "required": [
+                  "left_v",
+                  "right_v",
+                  "timestamp"
+                ],
+                "properties": {
+                  "left_v": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "right_v": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "timestamp": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "robot_body": {}
+          }
+        }
+      }
+    ],
+    "sensors": [
+      {
+        "sensor_name": "cam_front",
+        "sensor_model": "realsense",
+        "sensor_type": "realsense_d435i",
+        "sensor_info": {
+          "base_machine": "aloha_hq_1",
+          "ee_pos": [],
+          "cameras": [
+            "rgb",
+            "depth"
+          ],
+          "intrinsics": [],
+          "extrinsics": [],
+          "distortions": [],
+          "main": "rgb"
+        },
+        "data_info": {
+          "rgb": {
+            "fps": 30,
+            "ext": "mp4",
+            "encoding": {
+              "vcodec": "libx264",
+              "pix_fmt": "yuv420p",
+              "g": 15
+            }
+          },
+          "depth": {
+            "fps": 30,
+            "ext": "mkv",
+            "encoding": {
+              "vcodec": "ffv1",
+              "pix_fmt": "gray16le",
+              "g": 15
+            }
+          },
+          "frame_rate": 30
+        }
+      },
+      {
+        "sensor_name": "cam_left",
+        "sensor_model": "realsense",
+        "sensor_type": "realsense_d435i",
+        "sensor_info": {
+          "base_machine": "aloha_hq_1",
+          "ee_pos": [],
+          "cameras": [
+            "rgb",
+            "depth"
+          ],
+          "intrinsics": [],
+          "extrinsics": [],
+          "distortions": [],
+          "main": false
+        },
+        "data_info": {
+          "rgb": {
+            "fps": 30,
+            "ext": "mp4",
+            "encoding": {
+              "vcodec": "libx264",
+              "pix_fmt": "yuv420p",
+              "g": 15
+            }
+          },
+          "depth": {
+            "fps": 30,
+            "ext": "mkv",
+            "encoding": {
+              "vcodec": "ffv1",
+              "pix_fmt": "gray16le",
+              "g": 15
+            }
+          },
+          "frame_rate": 30
+        }
+      },
+      {
+        "sensor_name": "cam_right",
+        "sensor_model": "realsense",
+        "sensor_type": "realsense_d435i",
+        "sensor_info": {
+          "base_machine": "aloha_hq_1",
+          "ee_pos": [],
+          "cameras": [
+            "rgb",
+            "depth"
+          ],
+          "intrinsics": [],
+          "extrinsics": [],
+          "distortions": [],
+          "main": false
+        },
+        "data_info": {
+          "rgb": {
+            "fps": 30,
+            "ext": "mp4",
+            "encoding": {
+              "vcodec": "libx264",
+              "pix_fmt": "yuv420p",
+              "g": 15
+            }
+          },
+          "depth": {
+            "fps": 30,
+            "ext": "mkv",
+            "encoding": {
+              "vcodec": "ffv1",
+              "pix_fmt": "gray16le",
+              "g": 15
+            }
+          },
+          "frame_rate": 30
+        }
+      }
+    ]
+  },
+  "data_meta": {
+    "robot_data": "data/{robot_name}_{part}_{key}.jsonl",
+    "sensor_data": "videos/{sensor_name}_{camera_name}.{ext}"
+  },
+  "project_meta": {
+    "project_name": "test",
+    "bucket": "dexmal-sharefs-pdd",
+    "version": "v3.0",
+    "sdk_version": "v0.8.18"
+  }
+}

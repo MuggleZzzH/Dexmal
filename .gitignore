@@ -10,6 +10,8 @@ build/
 
 # Data and logs
 eps/
+eps_lerobot/
+folding_towel
 airbot_logs/
 *.log
 *.bson
@@ -50,7 +52,6 @@ lr_dataset_test/
 
 # Embedded git repositories (these have their own .git)
 airbot/5.1.6/airbot-data-5.1.6.4/data-collection/
-dagger_data_collection/
 
 # Binary/distribution files
 airbot/5.1.6/*.zip
