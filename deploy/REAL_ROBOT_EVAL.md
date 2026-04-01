@@ -115,9 +115,9 @@ python toolkits/dexmal_eval_bridge.py \
   --set-model-mode-on-start \
   --set-stop-mode-on-exit \
   --max-chunks 1 \
-  --action-scale 0.35 \
-  --max-joint-delta 0.04 \
-  --max-gripper-delta 0.006
+  --action-scale 1.0 \
+  --max-joint-delta 0.08 \
+  --max-gripper-delta 0.01
 ```
 
 ## Server Bridge Helpers
