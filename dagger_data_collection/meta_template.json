@@ -2,9 +2,9 @@
   "robot_id": "dos_w1",
   "task_meta": {
     "task_id": "20251111",
-    "task_name": "fold the cloth",
+    "task_name": "fold_towel",
     "description": "placeholder",
-    "prompt": "fold the cloth",
+    "prompt": "fold the towel",
     "tags": {
       "skill": [
         "placeholder"

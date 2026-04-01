@@ -40,7 +40,7 @@ from openpi_client import image_tools  # noqa: E402
 from openpi_client import websocket_client_policy  # noqa: E402
 
 
-DEFAULT_PROMPT = "fold the towel and place it into the output area"
+DEFAULT_PROMPT = "fold the towel"
 
 
 def parse_args() -> argparse.Namespace:
